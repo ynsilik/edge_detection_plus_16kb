@@ -31,8 +31,8 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   edge_detection_plus: 0a2d5578e3f04709e235c3959d7df7a783586499
-  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
-  path_provider_foundation: 2a68637f8a62df7f6e790a428d1bdf72cb4e2d59
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
   permission_handler_apple: 3787117e48f80715ff04a3830ca039283d6a4f29
   WeScan: f50277f7304d146d9ebc4ebdc1b587df84dcdd8b
 

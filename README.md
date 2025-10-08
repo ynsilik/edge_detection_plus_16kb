@@ -2,6 +2,15 @@
 
 A flutter plugin to detect edges of objects, scan paper, detect corners, detect rectangles. It allows cropping of the detected object image and returns the path of the cropped image.
 
+## Features
+
+- 📱 **Cross-platform**: Works on both Android and iOS
+- 🎯 **Edge Detection**: Advanced edge detection using OpenCV 4.12.0
+- 📷 **Camera Integration**: Live camera preview with edge detection
+- ✂️ **Image Cropping**: Automatic cropping of detected objects
+- 🔄 **Real-time Processing**: Live processing of camera feed
+- 📂 **Gallery Support**: Select images from device gallery
+
 ## Usage:
 
 ### iOS
@@ -67,18 +76,21 @@ Add to your need localizations to your app through XCode for localize actions bu
 
 ### Android
 
-The plugin code is written in kotlin 1.8.0 so the same has to be set to the android project of yours for compilation.
-Change the kotlin_version to 1.8.0 in your `android/build.gradle` file.
+The plugin uses **OpenCV 4.12.0** for advanced image processing and edge detection. The plugin code is written in Kotlin 1.9.23 and requires the same version in your Android project.
+
+Change the kotlin_version to 1.9.23 in your `android/build.gradle` file:
 
 ```
-ext.kotlin_version = '1.8.0'
+ext.kotlin_version = '1.9.23'
 ```
 
-Change the minimum Android SDK version to 21 (or higher) in your `android/app/build.gradle` file.
+Change the minimum Android SDK version to 21 (or higher) in your `android/app/build.gradle` file:
 
 ```
 minSdkVersion 21
 ```
+
+**Note**: The plugin includes OpenCV 4.12.0 (~15-20MB) which provides excellent performance for edge detection and image processing.
 
 ### Add dependency：
 

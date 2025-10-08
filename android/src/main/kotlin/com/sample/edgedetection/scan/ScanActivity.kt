@@ -3,6 +3,7 @@ package com.sample.edgedetection.scan
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
@@ -19,6 +20,7 @@ import com.sample.edgedetection.REQUEST_CODE
 import com.sample.edgedetection.base.BaseActivity
 import com.sample.edgedetection.view.PaperRectangle
 import org.opencv.android.OpenCVLoader
+import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
@@ -193,13 +195,29 @@ class ScanActivity : BaseActivity(), IScanView.Proxy {
             }
 
             val inputData: ByteArray? = getBytes(contentResolver.openInputStream(imageUri)!!)
-            val mat = Mat(Size(imageWidth, imageHeight), CvType.CV_8U)
-            mat.put(0, 0, inputData)
-            val pic = Imgcodecs.imdecode(mat, Imgcodecs.CV_LOAD_IMAGE_UNCHANGED)
-            if (rotation > -1) Core.rotate(pic, pic, rotation)
-            mat.release()
+            if (inputData != null && inputData.isNotEmpty()) {
+                // Use BitmapFactory for more reliable image decoding
+                val bitmap = BitmapFactory.decodeByteArray(inputData, 0, inputData.size)
+                val pic = if (bitmap != null) {
+                    val mat = Mat()
+                    Utils.bitmapToMat(bitmap, mat)
+                    if (rotation > -1) Core.rotate(mat, mat, rotation)
+                    bitmap.recycle()
+                    mat
+                } else {
+                    // Fallback to original method if BitmapFactory fails
+                    val mat = Mat(Size(imageWidth, imageHeight), CvType.CV_8U)
+                    mat.put(0, 0, inputData)
+                    val decoded = Imgcodecs.imdecode(mat, Imgcodecs.IMREAD_UNCHANGED)
+                    if (rotation > -1) Core.rotate(decoded, decoded, rotation)
+                    mat.release()
+                    decoded
+                }
 
-            mPresenter.detectEdge(pic)
+                mPresenter.detectEdge(pic)
+            } else {
+                throw Exception("Failed to read image data")
+            }
         } catch (error: Exception) {
             val intent = Intent()
             intent.putExtra("RESULT", error.toString())

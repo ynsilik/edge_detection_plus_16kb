@@ -37,8 +37,10 @@ class _MyAppState extends State<MyApp> {
     }
 
     // Generate filepath for saving
-    String imagePath = join((await getApplicationSupportDirectory()).path,
-        "${(DateTime.now().millisecondsSinceEpoch / 1000).round()}.jpeg");
+    String imagePath = join(
+      (await getApplicationSupportDirectory()).path,
+      "${(DateTime.now().millisecondsSinceEpoch / 1000).round()}.jpeg",
+    );
 
     bool success = false;
 
@@ -71,8 +73,10 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> getImageFromGallery() async {
     // Generate filepath for saving
-    String imagePath = join((await getApplicationSupportDirectory()).path,
-        "${(DateTime.now().millisecondsSinceEpoch / 1000).round()}.jpeg");
+    String imagePath = join(
+      (await getApplicationSupportDirectory()).path,
+      "${(DateTime.now().millisecondsSinceEpoch / 1000).round()}.jpeg",
+    );
 
     bool success = false;
     try {
@@ -104,9 +108,7 @@ class _MyAppState extends State<MyApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Plugin example app'),
-        ),
+        appBar: AppBar(title: const Text('Plugin example app')),
         body: SingleChildScrollView(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -139,9 +141,7 @@ class _MyAppState extends State<MyApp> {
                 visible: _imagePath != null,
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: Image.file(
-                    File(_imagePath ?? ''),
-                  ),
+                  child: Image.file(File(_imagePath ?? '')),
                 ),
               ),
             ],

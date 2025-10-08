@@ -280,17 +280,18 @@ class ScanPresenter constructor(
             .subscribe {
                 val pictureSize = p1?.parameters?.pictureSize
                 Log.i(TAG, "picture size: " + pictureSize.toString())
-                val mat = Mat(
-                    Size(
-                        pictureSize?.width?.toDouble() ?: 1920.toDouble(),
-                        pictureSize?.height?.toDouble() ?: 1080.toDouble()
-                    ), CvType.CV_8U
-                )
-                mat.put(0, 0, p0)
-                val pic = Imgcodecs.imdecode(mat, Imgcodecs.CV_LOAD_IMAGE_UNCHANGED)
-                Core.rotate(pic, pic, Core.ROTATE_90_CLOCKWISE)
-                mat.release()
-                detectEdge(pic)
+
+                // Use BitmapFactory for more reliable JPEG decoding
+                val bitmap = BitmapFactory.decodeByteArray(p0, 0, p0?.size ?: 0)
+                if (bitmap != null) {
+                    val pic = Mat()
+                    Utils.bitmapToMat(bitmap, pic)
+                    Core.rotate(pic, pic, Core.ROTATE_90_CLOCKWISE)
+                    bitmap.recycle()
+                    detectEdge(pic)
+                } else {
+                    Log.e(TAG, "Failed to decode bitmap from camera data")
+                }
                 shutted = true
                 busy = false
             }
