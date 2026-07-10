@@ -225,8 +225,8 @@ public final class ScannerViewController: UIViewController {
             return
         }
 
-        // Set preferred detection center to tapped point (in normalized coordinates)
-        captureSessionManager?.preferredCenter = convertedTouchPoint
+        // Set preferred detection center to tapped point (normalized coordinates)
+        captureSessionManager?.didTap(at: convertedTouchPoint)
     }
 
     // MARK: - Actions

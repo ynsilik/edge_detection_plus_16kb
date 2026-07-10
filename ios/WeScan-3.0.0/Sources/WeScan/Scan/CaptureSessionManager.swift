@@ -68,6 +68,16 @@ final class CaptureSessionManager: NSObject, AVCaptureVideoDataOutputSampleBuffe
     /// Preferred center point from user tap (normalized 0-1). When set, detection prefers rectangles near this point.
     var preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
 
+    /// When the user last tapped to focus. Used to delay auto-scan after tap.
+    private(set) var lastTapTime: Date = .distantPast
+
+    /// Resets the auto-scan counter and records the tap time.
+    func didTap(at point: CGPoint) {
+        preferredCenter = point
+        lastTapTime = Date()
+        rectangleFunnel.currentAutoScanPassCount = 0
+    }
+
     // MARK: Life Cycle
 
     init?(videoPreviewLayer: AVCaptureVideoPreviewLayer, delegate: RectangleDetectionDelegateProtocol? = nil) {
@@ -213,7 +223,10 @@ final class CaptureSessionManager: NSObject, AVCaptureVideoDataOutputSampleBuffe
                 let shouldAutoScan = (result == .showAndAutoScan)
                 self.displayRectangleResult(rectangleResult: RectangleDetectorResult(rectangle: rectangle, imageSize: imageSize))
                 if shouldAutoScan, CaptureSession.current.isAutoScanEnabled, !CaptureSession.current.isEditing {
-                    capturePhoto()
+                    // After tap, wait at least 1 second before auto-scanning
+                    if Date().timeIntervalSince(self.lastTapTime) > 1.0 {
+                        self.capturePhoto()
+                    }
                 }
             }
 
