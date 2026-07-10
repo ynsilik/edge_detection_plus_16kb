@@ -48,7 +48,7 @@ extension Array where Element == Quadrilateral {
         let areaScore = min(area * 3.0, 1.0)
 
         // Aspect ratio (0-1): prefer ~1.586 (credit card) or ~1.4 (business card)
-        let aspect = max(w, h) / max(min(w, h), 0.001)
+        let aspect = max(w, h) / max(Swift.min(w, h), 0.001)
         let idealAspect: Double = 1.5
         let aspectScore = 1.0 - min(abs(aspect - idealAspect) / idealAspect, 1.0)
 
