@@ -39,18 +39,18 @@ extension Array where Element == Quadrilateral {
         // Center proximity (0-1): closer to preferred center = better
         let maxDist = 0.7
         let dist = hypot(Double(c.x - preferredCenter.x), Double(c.y - preferredCenter.y))
-        let centerScore = 1.0 - min(dist / maxDist, 1.0)
+        let centerScore = 1.0 - Swift.min(dist / maxDist, 1.0)
 
         // Area (0-1): bigger rectangle = better
         let w = Double(abs(quad.topRight.x - quad.topLeft.x))
         let h = Double(abs(quad.bottomLeft.y - quad.topLeft.y))
         let area = w * h
-        let areaScore = min(area * 3.0, 1.0)
+        let areaScore = Swift.min(area * 3.0, 1.0)
 
         // Aspect ratio (0-1): prefer ~1.586 (credit card) or ~1.4 (business card)
-        let aspect = max(w, h) / max(Swift.min(w, h), 0.001)
+        let aspect = Swift.max(w, h) / Swift.max(Swift.min(w, h), 0.001)
         let idealAspect: Double = 1.5
-        let aspectScore = 1.0 - min(abs(aspect - idealAspect) / idealAspect, 1.0)
+        let aspectScore = 1.0 - Swift.min(abs(aspect - idealAspect) / idealAspect, 1.0)
 
         // Confidence (0-1): from Vision
         let confScore = quad.confidence ?? 0.8
