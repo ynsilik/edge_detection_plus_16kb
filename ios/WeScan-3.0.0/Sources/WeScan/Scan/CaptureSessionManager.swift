@@ -65,6 +65,9 @@ final class CaptureSessionManager: NSObject, AVCaptureVideoDataOutputSampleBuffe
     /// The minimum number of time required by `noRectangleCount` to validate that no rectangles have been found.
     private let noRectangleThreshold = 3
 
+    /// Preferred center point from user tap (normalized 0-1). When set, detection prefers rectangles near this point.
+    var preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
+
     // MARK: Life Cycle
 
     init?(videoPreviewLayer: AVCaptureVideoPreviewLayer, delegate: RectangleDetectionDelegateProtocol? = nil) {
@@ -185,7 +188,7 @@ final class CaptureSessionManager: NSObject, AVCaptureVideoDataOutputSampleBuffe
         let imageSize = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
 
         if #available(iOS 11.0, *) {
-            VisionRectangleDetector.rectangle(forPixelBuffer: pixelBuffer) { rectangle in
+            VisionRectangleDetector.rectangle(forPixelBuffer: pixelBuffer, preferredCenter: preferredCenter) { rectangle in
                 self.processRectangle(rectangle: rectangle, imageSize: imageSize)
             }
         } else {
@@ -334,8 +337,26 @@ extension CaptureSessionManager: AVCapturePhotoCaptureDelegate {
                 break
             }
 
+            // Post-capture refinement: re-detect on high-res photo for shake compensation
             var quad: Quadrilateral?
-            if let displayedRectangleResult = self?.displayedRectangleResult {
+            let group = DispatchGroup()
+            group.enter()
+            if #available(iOS 11.0, *) {
+                VisionRectangleDetector.rectangle(forImage: image, preferredCenter: self?.preferredCenter ?? CGPoint(x: 0.5, y: 0.5)) { refinedQuad in
+                    if let refined = refinedQuad {
+                        quad = refined.toCartesian(withHeight: refinedQuad!.topLeft.y + refinedQuad!.bottomLeft.y)
+                    }
+                    group.leave()
+                }
+            } else {
+                if let ciImage = CIImage(image: image) {
+                    quad = CIRectangleDetector.rectangle(forImage: ciImage)
+                }
+                group.leave()
+            }
+            group.wait()
+
+            if quad == nil, let displayedRectangleResult = self?.displayedRectangleResult {
                 quad = self?.displayRectangleResult(rectangleResult: displayedRectangleResult)
                 quad = quad?.scale(displayedRectangleResult.imageSize, image.size, withRotationAngle: angle)
             }

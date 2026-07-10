@@ -1,11 +1,3 @@
-//
-//  Array+Utils.swift
-//  WeScan
-//
-//  Created by Boris Emorine on 2/8/18.
-//  Copyright © 2018 WeTransfer. All rights reserved.
-//
-
 import Foundation
 import Vision
 
@@ -38,6 +30,38 @@ extension Array where Element == Quadrilateral {
             let dist2 = hypot(center2.x - frameCenter.x, center2.y - frameCenter.y)
             return dist1 < dist2
         })
+    }
+
+    /// Scores a quadrilateral considering center proximity, area, aspect ratio, and confidence.
+    private func scoreQuad(_ quad: Quadrilateral, preferredCenter: CGPoint) -> Double {
+        let c = center(of: quad)
+
+        // Center proximity (0-1): closer to preferred center = better
+        let maxDist = 0.7
+        let dist = hypot(Double(c.x - preferredCenter.x), Double(c.y - preferredCenter.y))
+        let centerScore = 1.0 - min(dist / maxDist, 1.0)
+
+        // Area (0-1): bigger rectangle = better
+        let w = Double(abs(quad.topRight.x - quad.topLeft.x))
+        let h = Double(abs(quad.bottomLeft.y - quad.topLeft.y))
+        let area = w * h
+        let areaScore = min(area * 3.0, 1.0)
+
+        // Aspect ratio (0-1): prefer ~1.586 (credit card) or ~1.4 (business card)
+        let aspect = max(w, h) / max(min(w, h), 0.001)
+        let idealAspect: Double = 1.5
+        let aspectScore = 1.0 - min(abs(aspect - idealAspect) / idealAspect, 1.0)
+
+        // Confidence (0-1): from Vision
+        let confScore = quad.confidence ?? 0.8
+
+        return centerScore * 0.35 + areaScore * 0.25 + aspectScore * 0.15 + confScore * 0.25
+    }
+
+    /// Finds the best quadrilateral using a weighted score of center proximity, area, aspect ratio, and confidence.
+    /// - Parameter preferredCenter: The preferred center point (defaults to 0.5, 0.5 for frame center).
+    func best(preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5)) -> Quadrilateral? {
+        return self.max(by: { scoreQuad($0, preferredCenter: preferredCenter) < scoreQuad($1, preferredCenter: preferredCenter) })
     }
 
 }

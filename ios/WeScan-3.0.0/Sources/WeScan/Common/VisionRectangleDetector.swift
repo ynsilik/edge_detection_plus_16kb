@@ -1,11 +1,3 @@
-//
-//  VisionRectangleDetector.swift
-//  WeScan
-//
-//  Created by Julian Schiavo on 28/7/2018.
-//  Copyright © 2018 WeTransfer. All rights reserved.
-//
-
 import CoreImage
 import Foundation
 import Vision
@@ -14,13 +6,24 @@ import Vision
 @available(iOS 11.0, *)
 enum VisionRectangleDetector {
 
+    /// Applies preprocessing filters to enhance edge detection.
+    private static func preprocessImage(_ ciImage: CIImage) -> CIImage {
+        let enhanced = ciImage
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputContrastKey: 1.3,
+                kCIInputBrightnessKey: 0.05,
+                kCIInputSaturationKey: 0.5,
+            ])
+        return enhanced
+    }
+
     private static func completeImageRequest(
         for request: VNImageRequestHandler,
         width: CGFloat,
         height: CGFloat,
+        preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
         completion: @escaping ((Quadrilateral?) -> Void)
     ) {
-        // Create the rectangle request, and, if found, return the rectangle closest to center (else return nothing).
         let rectangleDetectionRequest: VNDetectRectanglesRequest = {
             let rectDetectRequest = VNDetectRectanglesRequest(completionHandler: { request, error in
                 guard error == nil, let results = request.results as? [VNRectangleObservation], !results.isEmpty else {
@@ -30,9 +33,7 @@ enum VisionRectangleDetector {
 
                 let quads: [Quadrilateral] = results.map(Quadrilateral.init)
 
-                // Pick the rectangle closest to the center of the frame, so when multiple cards are visible
-                // the one the user is pointing at (center of view) gets selected.
-                guard let closest = quads.closestToCenter() else {
+                guard let bestQuad = quads.best(preferredCenter: preferredCenter) else {
                     completion(nil)
                     return
                 }
@@ -40,17 +41,16 @@ enum VisionRectangleDetector {
                 let transform = CGAffineTransform.identity
                     .scaledBy(x: width, y: height)
 
-                completion(closest.applying(transform))
+                completion(bestQuad.applying(transform))
             })
 
-            rectDetectRequest.minimumConfidence = 0.8
+            rectDetectRequest.minimumConfidence = 0.6
             rectDetectRequest.maximumObservations = 15
-            rectDetectRequest.minimumAspectRatio = 0.3
+            rectDetectRequest.minimumAspectRatio = 0.2
 
             return rectDetectRequest
         }()
 
-        // Send the requests to the request handler.
         do {
             try request.perform([rectangleDetectionRequest])
         } catch {
@@ -61,40 +61,64 @@ enum VisionRectangleDetector {
     }
 
     /// Detects rectangles from the given CVPixelBuffer/CVImageBuffer on iOS 11 and above.
-    ///
-    /// - Parameters:
-    ///   - pixelBuffer: The pixelBuffer to detect rectangles on.
-    ///   - completion: The biggest rectangle on the CVPixelBuffer
-    static func rectangle(forPixelBuffer pixelBuffer: CVPixelBuffer, completion: @escaping ((Quadrilateral?) -> Void)) {
-        let imageRequestHandler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
+    static func rectangle(forPixelBuffer pixelBuffer: CVPixelBuffer,
+                           preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
+                           completion: @escaping ((Quadrilateral?) -> Void)) {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let preprocessed = preprocessImage(ciImage)
+        let imageRequestHandler = VNImageRequestHandler(ciImage: preprocessed, options: [:])
         VisionRectangleDetector.completeImageRequest(
             for: imageRequestHandler,
             width: CGFloat(CVPixelBufferGetWidth(pixelBuffer)),
             height: CGFloat(CVPixelBufferGetHeight(pixelBuffer)),
+            preferredCenter: preferredCenter,
             completion: completion)
     }
 
     /// Detects rectangles from the given image on iOS 11 and above.
-    ///
-    /// - Parameters:
-    ///   - image: The image to detect rectangles on.
-    /// - Returns: The biggest rectangle detected on the image.
-    static func rectangle(forImage image: CIImage, completion: @escaping ((Quadrilateral?) -> Void)) {
-        let imageRequestHandler = VNImageRequestHandler(ciImage: image, options: [:])
+    static func rectangle(forImage image: CIImage,
+                           preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
+                           completion: @escaping ((Quadrilateral?) -> Void)) {
+        let preprocessed = preprocessImage(image)
+        let imageRequestHandler = VNImageRequestHandler(ciImage: preprocessed, options: [:])
         VisionRectangleDetector.completeImageRequest(
             for: imageRequestHandler, width: image.extent.width,
-            height: image.extent.height, completion: completion)
+            height: image.extent.height,
+            preferredCenter: preferredCenter,
+            completion: completion)
     }
 
     static func rectangle(
         forImage image: CIImage,
         orientation: CGImagePropertyOrientation,
+        preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
         completion: @escaping ((Quadrilateral?) -> Void)
     ) {
-        let imageRequestHandler = VNImageRequestHandler(ciImage: image, orientation: orientation, options: [:])
-        let orientedImage = image.oriented(orientation)
+        let preprocessed = preprocessImage(image)
+        let orientedImage = preprocessed.oriented(orientation)
+        let imageRequestHandler = VNImageRequestHandler(ciImage: orientedImage, orientation: orientation, options: [:])
         VisionRectangleDetector.completeImageRequest(
             for: imageRequestHandler, width: orientedImage.extent.width,
-            height: orientedImage.extent.height, completion: completion)
+            height: orientedImage.extent.height,
+            preferredCenter: preferredCenter,
+            completion: completion)
     }
+
+    /// Detects rectangles from a UIImage (for post-capture refinement).
+    static func rectangle(forImage uiImage: UIImage,
+                           preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
+                           completion: @escaping ((Quadrilateral?) -> Void)) {
+        guard let ciImage = CIImage(image: uiImage) else {
+            completion(nil)
+            return
+        }
+        let preprocessed = preprocessImage(ciImage)
+        let imageRequestHandler = VNImageRequestHandler(ciImage: preprocessed, options: [:])
+        VisionRectangleDetector.completeImageRequest(
+            for: imageRequestHandler, width: ciImage.extent.width,
+            height: ciImage.extent.height,
+            preferredCenter: preferredCenter,
+            completion: completion)
+    }
+
 }

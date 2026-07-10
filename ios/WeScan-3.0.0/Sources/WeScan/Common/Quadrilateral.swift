@@ -28,6 +28,9 @@ public struct Quadrilateral: Transformable {
     /// A point that specifies the bottom left corner of the quadrilateral.
     public var bottomLeft: CGPoint
 
+    /// Confidence score from Vision (0-1). Nil for CI detection.
+    public var confidence: Double?
+
     public var description: String {
         return "topLeft: \(topLeft), topRight: \(topRight), bottomRight: \(bottomRight), bottomLeft: \(bottomLeft)"
     }
@@ -66,6 +69,7 @@ public struct Quadrilateral: Transformable {
         self.topRight = rectangleObservation.topRight
         self.bottomLeft = rectangleObservation.bottomLeft
         self.bottomRight = rectangleObservation.bottomRight
+        self.confidence = Double(rectangleObservation.confidence)
     }
 
     init(topLeft: CGPoint, topRight: CGPoint, bottomRight: CGPoint, bottomLeft: CGPoint) {
