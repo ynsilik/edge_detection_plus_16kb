@@ -36,6 +36,6 @@ enum CIRectangleDetector {
             return Quadrilateral(rectangleFeature: rectangle)
         }
 
-        return quads.biggest()
+        return quads.closestToCenter()
     }
 }

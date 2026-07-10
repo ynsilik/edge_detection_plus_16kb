@@ -74,7 +74,7 @@ final class ReviewViewController: UIViewController {
         setupToolbar()
         setupConstraints()
 
-        title = NSLocalizedString("wescan.review.title",
+        title = WeScanCustomStrings.shared.reviewTitle ?? NSLocalizedString("wescan.review.title",
                                   tableName: nil,
                                   bundle: Bundle(for: ReviewViewController.self),
                                   value: "Review",

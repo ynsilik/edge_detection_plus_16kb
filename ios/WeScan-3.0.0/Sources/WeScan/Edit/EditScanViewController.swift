@@ -31,7 +31,7 @@ final class EditScanViewController: UIViewController {
     }()
 
     private lazy var nextButton: UIBarButtonItem = {
-        let title = NSLocalizedString("wescan.edit.button.next",
+        let title = WeScanCustomStrings.shared.next ?? NSLocalizedString("wescan.edit.button.next",
                                       tableName: nil,
                                       bundle: Bundle(for: EditScanViewController.self),
                                       value: "Next",
@@ -43,7 +43,7 @@ final class EditScanViewController: UIViewController {
     }()
 
     private lazy var cancelButton: UIBarButtonItem = {
-        let title = NSLocalizedString("wescan.scanning.cancel",
+        let title = WeScanCustomStrings.shared.cancel ?? NSLocalizedString("wescan.scanning.cancel",
                                       tableName: nil,
                                       bundle: Bundle(for: EditScanViewController.self),
                                       value: "Cancel",
@@ -82,7 +82,7 @@ final class EditScanViewController: UIViewController {
 
         setupViews()
         setupConstraints()
-        title = NSLocalizedString("wescan.edit.title",
+        title = WeScanCustomStrings.shared.editTitle ?? NSLocalizedString("wescan.edit.title",
                                   tableName: nil,
                                   bundle: Bundle(for: EditScanViewController.self),
                                   value: "Edit Scan",

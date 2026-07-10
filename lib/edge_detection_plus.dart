@@ -13,6 +13,12 @@ class EdgeDetectionPlus {
     String androidCropTitle = "Crop",
     String androidCropBlackWhiteTitle = "Black White",
     String androidCropReset = "Reset",
+    String iosCancelTitle = "Cancel",
+    String iosAutoScanTitle = "Auto",
+    String iosManualScanTitle = "Manual",
+    String iosNextTitle = "Next",
+    String iosEditTitle = "Edit Scan",
+    String iosReviewTitle = "Review",
   }) async {
     return await _channel.invokeMethod('edge_detect', {
       'save_to': saveTo,
@@ -21,6 +27,12 @@ class EdgeDetectionPlus {
       'crop_title': androidCropTitle,
       'crop_black_white_title': androidCropBlackWhiteTitle,
       'crop_reset_title': androidCropReset,
+      'ios_cancel_title': iosCancelTitle,
+      'ios_auto_scan_title': iosAutoScanTitle,
+      'ios_manual_scan_title': iosManualScanTitle,
+      'ios_next_title': iosNextTitle,
+      'ios_edit_title': iosEditTitle,
+      'ios_review_title': iosReviewTitle,
     });
   }
 
@@ -30,6 +42,10 @@ class EdgeDetectionPlus {
     String androidCropTitle = "Crop",
     String androidCropBlackWhiteTitle = "Black White",
     String androidCropReset = "Reset",
+    String iosCancelTitle = "Cancel",
+    String iosNextTitle = "Next",
+    String iosEditTitle = "Edit Scan",
+    String iosReviewTitle = "Review",
   }) async {
     return await _channel.invokeMethod('edge_detect_gallery', {
       'save_to': saveTo,
@@ -37,6 +53,10 @@ class EdgeDetectionPlus {
       'crop_black_white_title': androidCropBlackWhiteTitle,
       'crop_reset_title': androidCropReset,
       'from_gallery': true,
+      'ios_cancel_title': iosCancelTitle,
+      'ios_next_title': iosNextTitle,
+      'ios_edit_title': iosEditTitle,
+      'ios_review_title': iosReviewTitle,
     });
   }
 }

@@ -20,7 +20,7 @@ enum VisionRectangleDetector {
         height: CGFloat,
         completion: @escaping ((Quadrilateral?) -> Void)
     ) {
-        // Create the rectangle request, and, if found, return the biggest rectangle (else return nothing).
+        // Create the rectangle request, and, if found, return the rectangle closest to center (else return nothing).
         let rectangleDetectionRequest: VNDetectRectanglesRequest = {
             let rectDetectRequest = VNDetectRectanglesRequest(completionHandler: { request, error in
                 guard error == nil, let results = request.results as? [VNRectangleObservation], !results.isEmpty else {
@@ -30,8 +30,9 @@ enum VisionRectangleDetector {
 
                 let quads: [Quadrilateral] = results.map(Quadrilateral.init)
 
-                // This can't fail because the earlier guard protected against an empty array, but we use guard because of SwiftLint
-                guard let biggest = quads.biggest() else {
+                // Pick the rectangle closest to the center of the frame, so when multiple cards are visible
+                // the one the user is pointing at (center of view) gets selected.
+                guard let closest = quads.closestToCenter() else {
                     completion(nil)
                     return
                 }
@@ -39,7 +40,7 @@ enum VisionRectangleDetector {
                 let transform = CGAffineTransform.identity
                     .scaledBy(x: width, y: height)
 
-                completion(biggest.applying(transform))
+                completion(closest.applying(transform))
             })
 
             rectDetectRequest.minimumConfidence = 0.8
