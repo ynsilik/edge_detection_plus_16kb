@@ -104,21 +104,4 @@ enum VisionRectangleDetector {
             completion: completion)
     }
 
-    /// Detects rectangles from a UIImage (for post-capture refinement).
-    static func rectangle(forImage uiImage: UIImage,
-                           preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
-                           completion: @escaping ((Quadrilateral?) -> Void)) {
-        guard let ciImage = CIImage(image: uiImage) else {
-            completion(nil)
-            return
-        }
-        let preprocessed = preprocessImage(ciImage)
-        let imageRequestHandler = VNImageRequestHandler(ciImage: preprocessed, options: [:])
-        VisionRectangleDetector.completeImageRequest(
-            for: imageRequestHandler, width: ciImage.extent.width,
-            height: ciImage.extent.height,
-            preferredCenter: preferredCenter,
-            completion: completion)
-    }
-
 }
