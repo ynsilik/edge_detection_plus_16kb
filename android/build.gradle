@@ -53,5 +53,8 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.exifinterface:exifinterface:1.3.6'
 
-    implementation 'org.opencv:opencv:4.12.0'
+    // OpenCV 4.12.0 minimal build: yalnizca kullanilan moduller (core, imgproc, imgcodecs)
+    // Kaynaktan 16KB page-size uyumlu olarak derlendi. JNI lib'ler src/main/jniLibs altinda.
+    // Bu, tam OpenCV AAR'a gore ~%50 daha kucuk libopencv_java4.so saglar.
+    implementation files('libs/opencv-classes.jar')
 }
