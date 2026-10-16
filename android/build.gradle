@@ -1,6 +1,5 @@
 plugins {
     id 'com.android.library'
-    id 'org.jetbrains.kotlin.android'
 }
 
 group 'com.sample.edgedetection'
@@ -25,9 +24,11 @@ android {
     buildFeatures {
         viewBinding = true
     }
+}
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8
     }
 }
 
