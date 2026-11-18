@@ -9,21 +9,20 @@ import kotlin.math.*
 
 const val TAG: String = "PaperProcessor"
 
-private const val WORK_WIDTH = 600.0
-private const val BORDER_BAND = 8.0
+private const val WORK_WIDTH = 480.0
 
 /**
  * Kamera karesinden kart/dokuman dikdortgenini bulur.
  *
- * Onemli noktalar (arxiv/search temelli):
- *  - Blur + morpholoji goruntu kenarinda bir "ring" uretir; bu ring en buyuk
- *    kontur olup tum ekrani kapsar. Kenar bandini silip sınıra değen adaylari
- *    reddetmek gerekir (siyah ekranda dev dikdortgen sorunu).
- *  - approxPolyDP ile "tam 4 kose" beklemek kareler arasinda titreme yapar.
- *    Bunun yerine kontur merkezine gore 4 ceyrekte en uzak nokta kullanilir
- *    (jscanify yontemi) - yuvarlak/kopuk koselere de dayaniklidir.
- *  - Canny esikleri goruntunun medyanindan turetilir (sabit esikler isiga
- *    gore fazla hassas/gevsek kalir).
+ * Arastirma temelli onemli noktalar:
+ *  - Core.normalize(NORM_MINMAX) dusuk varyansli (siyah/tek renk) karelerde
+ *    sensor gurultusunu 0-255'e amplifiye eder -> Canny kenar uretir -> morfoloji
+ *    bunu butun ekrani kapsayan bir halkaya donusturur. Once stddev kontrolu.
+ *  - GaussianBlur BORDER_CONSTANT sinirda yapay gradyan uretir; REFLECT_101 kullan.
+ *  - Morfolojiyi 0-padding ile genisletilmis goruntu uzerinde yap, sonra kirp.
+ *  - approxPolyDP "tam 4 kose" dayatmesi kareler arasi titreme yapar; bunun
+ *    yerine kontur merkezine gore 4 ceyrekte en uzak nokta (jscanify) kullanilir.
+ *  - Halka artefaktini RETR_CCOMP hierarchy child kontrolu ile reddet.
  */
 fun processPicture(previewFrame: Mat): Corners? {
     if (previewFrame.empty()) return null
@@ -34,105 +33,133 @@ fun processPicture(previewFrame: Mat): Corners? {
     val gray = Mat()
     val blurred = Mat()
     val edges = Mat()
+    val padded = Mat()
     val closed = Mat()
 
     try {
         Imgproc.resize(previewFrame, working, Size(), scale, scale, Imgproc.INTER_AREA)
         Imgproc.cvtColor(working, gray, Imgproc.COLOR_BGR2GRAY)
-        Core.normalize(gray, gray, 0.0, 255.0, Core.NORM_MINMAX)
-        Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
+
+        // Bos/siyah/duz yuzey kontrolu: normalize etmeden once stddev bak.
+        val mean = MatOfDouble()
+        val std = MatOfDouble()
+        Core.meanStdDev(gray, mean, std)
+        val stddev = std.toArray().firstOrNull() ?: 0.0
+        mean.release(); std.release()
+        if (stddev < 3.0) {
+            Log.d(TAG, "Dusuk varyans ($stddev) -> bos kare, tespit yok")
+            return null
+        }
+
+        Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0, Core.BORDER_REFLECT_101)
 
         val median = medianOf(blurred)
         val lower = max(30.0, min(200.0, 0.66 * median))
         val upper = max(60.0, min(240.0, 1.33 * median))
         Imgproc.Canny(blurred, edges, lower, upper)
 
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(7.0, 7.0))
-        Imgproc.morphologyEx(edges, closed, Imgproc.MORPH_CLOSE, kernel)
+        // Morfolojiyi 0-padding ile yap: sinirda ring olusumunu onler.
+        val k = 5
+        val border = k / 2 + 2
+        Imgproc.copyMakeBorder(edges, padded, border, border, border, border, Core.BORDER_CONSTANT, Scalar(0.0))
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(k.toDouble(), k.toDouble()))
+        Imgproc.morphologyEx(padded, closed, Imgproc.MORPH_CLOSE, kernel)
         kernel.release()
+        val close = Mat(closed, org.opencv.core.Rect(border, border, edges.cols(), edges.rows()))
 
-        // Kenar bandini temizle: Canny/morpholoji sinirda ring olusturuyor.
-        clearBorder(closed, BORDER_BAND)
+        val w = close.cols()
+        val h = close.rows()
+        val band = k / 2 + 4
+        clearBorder(close, band)
 
         val contours = ArrayList<MatOfPoint>()
         val hierarchy = Mat()
-        Imgproc.findContours(closed, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-        hierarchy.release()
+        Imgproc.findContours(close, contours, hierarchy, Imgproc.RETR_CCOMP, Imgproc.CHAIN_APPROX_SIMPLE)
 
-        val w = working.cols()
-        val h = working.rows()
         val imageArea = w.toDouble() * h.toDouble()
-        val contoursSorted = contours.sortedByDescending { Imgproc.contourArea(it) }.take(8)
+        val ordered = contours
+            .mapIndexed { i, c -> i to c }
+            .sortedByDescending { Imgproc.contourArea(it.second) }
+            .take(8)
 
         var bestQuad: List<Point>? = null
         var bestScore = Double.NEGATIVE_INFINITY
 
-        for (contour in contoursSorted) {
+        for ((index, contour) in ordered) {
             val area = Imgproc.contourArea(contour)
-            if (area < imageArea * 0.05 || area > imageArea * 0.95) continue
+            if (area < imageArea * 0.08 || area > imageArea * 0.85) continue
+
+            // Halka kontrolu: CCOMP'da child varsa ve child alani ana alana yakinssa
+            // bu bir kenar halkasidir, gercek kart degil.
+            val child = hierarchy.get(0, index).getOrNull(2)?.toInt() ?: -1
+            if (child >= 0 && child < contours.size) {
+                val childArea = Imgproc.contourArea(contours[child])
+                if (childArea > area * 0.80) continue
+            }
 
             val rect = Imgproc.boundingRect(contour)
-            // Sınıra değen adayları reddet (tam ekran ring'i burada elenir).
-            if (rect.x < BORDER_BAND || rect.y < BORDER_BAND ||
-                rect.x + rect.width > w - BORDER_BAND ||
-                rect.y + rect.height > h - BORDER_BAND) continue
+            if (rect.x <= band || rect.y <= band ||
+                rect.x + rect.width >= w - band ||
+                rect.y + rect.height >= h - band) continue
+
+            val fill = area / (rect.width.toDouble() * rect.height.toDouble())
+            if (fill < 0.70) continue
+
+            val hull = MatOfInt()
+            Imgproc.convexHull(contour, hull)
+            val hullPoints = MatOfPoint()
+            Imgproc.approxPolyDP(contour, hullPoints, 0.02 * Imgproc.arcLength(MatOfPoint2f(*contour.toArray()), true), true)
+            val hullArea = Imgproc.contourArea(hullPoints)
+            hull.release(); hullPoints.release()
+            val solidity = if (hullArea > 0) area / hullArea else 0.0
+            if (solidity < 0.85) continue
 
             val quad = cornersFromQuadrants(contour) ?: continue
-            if (quad.any { it.x < BORDER_BAND || it.y < BORDER_BAND || it.x > w - BORDER_BAND || it.y > h - BORDER_BAND }) continue
+            if (quad.any { it.x <= band || it.y <= band || it.x >= w - band || it.y >= h - band }) continue
 
             val top = (distance(quad[0], quad[1]) + distance(quad[3], quad[2])) / 2.0
             val side = (distance(quad[0], quad[3]) + distance(quad[1], quad[2])) / 2.0
             if (top <= 0.0 || side <= 0.0) continue
             val aspect = max(top, side) / min(top, side)
-            // Kart/genis dikdortgen: ~1.0-2.2 araligi (1.5 ideal).
-            if (aspect < 1.05 || aspect > 2.3) continue
+            if (aspect < 1.20 || aspect > 2.10) continue
 
-            val fillRatio = area / (top * side)
-            if (fillRatio < 0.5) continue
-
-            // Merkeze yakinlik tercih edilir.
             val cx = quad.map { it.x }.average()
             val cy = quad.map { it.y }.average()
             val dx = (cx - w / 2.0) / w
             val dy = (cy - h / 2.0) / h
             val centerScore = 1.0 - min(1.0, sqrt(dx * dx + dy * dy) * 2.0)
-            val aspectScore = 1.0 - min(1.0, abs(aspect - 1.586) / 1.0)
-            val score = (area / imageArea) * 60.0 + centerScore * 20.0 + aspectScore * 20.0 + fillRatio * 10.0
+            val aspectScore = 1.0 - min(1.0, abs(aspect - 1.586) / 0.6)
+            val score = (area / imageArea) * 50.0 + centerScore * 20.0 + aspectScore * 20.0 + fill * 10.0
 
             if (score > bestScore) {
                 bestScore = score
                 bestQuad = quad
             }
         }
+        hierarchy.release()
 
         if (bestQuad != null) {
             val scaled = bestQuad!!.map { Point(it.x / scale, it.y / scale) }
             return Corners(scaled, originalSize)
         }
-
-        // Tespit yoksa dikdortgen cizme - kullanicinin yanlis yonlendirilmesini
-        // engellemek icin bos sonuc dondurulur (onCornersNotDetected cagrilir).
         return null
     } catch (e: Exception) {
         Log.e(TAG, "Kose tespiti hatasi", e)
         return null
     } finally {
-        closed.release(); edges.release(); blurred.release(); gray.release(); working.release()
+        closed.release(); padded.release(); edges.release(); blurred.release(); gray.release(); working.release()
     }
 }
 
-/** Kontur merkezine gore 4 ceyrekte en uzak noktalari bulur (TL,TR,BR,BL). */
 private fun cornersFromQuadrants(contour: MatOfPoint): List<Point>? {
     val pts = contour.toArray().toList()
     if (pts.size < 4) return null
     val cx = pts.map { it.x }.average()
     val cy = pts.map { it.y }.average()
-
     var tl: Point? = null; var tr: Point? = null; var br: Point? = null; var bl: Point? = null
     var dTL = -1.0; var dTR = -1.0; var dBR = -1.0; var dBL = -1.0
     for (p in pts) {
-        val dx = p.x - cx
-        val dy = p.y - cy
+        val dx = p.x - cx; val dy = p.y - cy
         val d = dx * dx + dy * dy
         when {
             dx <= 0 && dy <= 0 -> if (d > dTL) { tl = p; dTL = d }
@@ -146,13 +173,11 @@ private fun cornersFromQuadrants(contour: MatOfPoint): List<Point>? {
 
 private fun distance(a: Point, b: Point): Double = sqrt((a.x - b.x).pow(2.0) + (a.y - b.y).pow(2.0))
 
-private fun clearBorder(mat: Mat, band: Double) {
+private fun clearBorder(mat: Mat, band: Int) {
     val w = mat.cols(); val h = mat.rows()
-    val b = min(band.toInt(), min(w, h) / 4)
-    if (b <= 0) return
+    val b = min(band, min(w, h) / 4)
     for (y in 0 until h) {
         if (y >= b && y < h - b) {
-            // ust/alt sadece kenar satirlari
             for (x in 0 until b) mat.put(y, x, 0.0)
             for (x in (w - b) until w) mat.put(y, x, 0.0)
         } else {
@@ -169,12 +194,9 @@ private fun medianOf(mat: Mat): Double {
 }
 
 fun cropPicture(picture: Mat, pts: List<Point>): Mat {
-    pts.forEach { Log.i(TAG, "point: $it") }
     val tl = pts[0]; val tr = pts[1]; val br = pts[2]; val bl = pts[3]
-    val widthA = distance(br, bl); val widthB = distance(tr, tl)
-    val dw = max(widthA, widthB)
-    val heightA = distance(tr, br); val heightB = distance(tl, bl)
-    val dh = max(heightA, heightB)
+    val dw = max(distance(br, bl), distance(tr, tl))
+    val dh = max(distance(tr, br), distance(tl, bl))
     val croppedPic = Mat(max(1, dh.toInt()), max(1, dw.toInt()), CvType.CV_8UC4)
     val srcMat = Mat(4, 1, CvType.CV_32FC2)
     val dstMat = Mat(4, 1, CvType.CV_32FC2)

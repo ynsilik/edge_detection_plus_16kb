@@ -65,16 +65,18 @@ class ScanPresenter constructor(
     // Kareler arası köşe titreşimini EMA ile yumuşat ve yalnızca gerçekten
     // sabitlenen bir dikdörtgende otomatik foto çek.
     private var smoothedCorners: List<org.opencv.core.Point>? = null
-    private var stableFrames = 0
     private var missedFrames = 0
 
     companion object {
-        private const val SMOOTHING_ALPHA = 0.4          // EMA katsayısı
+        private const val SMOOTHING_ALPHA = 0.45         // EMA katsayısı (literatür 0.35-0.45)
         private const val SNAP_DISTANCE_FRAC = 0.12      // kare genişliğinin %12'si -> ani zıplama
-        private const val STABLE_DRIFT_FRAC = 0.02       // kare genişliğinin %2'si -> sabit kabul
-        private const val STABLE_FRAMES_REQUIRED = 8     // ~0.5 sn sabit kalınca çek
+        private const val STABLE_DRIFT_FRAC = 0.015      // %1.5 -> sabit kabul
+        private const val STABLE_FRAMES_REQUIRED = 4     // 4 karelik pencerede 3'ü sabit
+        private const val MIN_STABLE_IN_WINDOW = 3
         private const val MAX_MISSES = 3                 // 3 kare tespit yoksa çizgiyi kaldır
     }
+
+    private val stableWindow = ArrayDeque<Boolean>()
 
     /** Tespit edilen köşeleri yumuşatır, stabilite sayacını günceller. */
     private fun stabilizeCorners(corners: Corners): Corners {
@@ -83,7 +85,7 @@ class ScanPresenter constructor(
             missedFrames++
             if (missedFrames >= MAX_MISSES) {
                 smoothedCorners = null
-                stableFrames = 0
+                stableWindow.clear()
                 iView.getPaperRect().onCornersNotDetected()
             }
             return corners
@@ -91,19 +93,19 @@ class ScanPresenter constructor(
         missedFrames = 0
         val frameW = corners.size.width.toDouble().coerceAtLeast(1.0)
         val current = smoothedCorners
+        var maxJump = 0.0
         if (current == null || current.size != 4) {
             smoothedCorners = pts.map { org.opencv.core.Point(it.x, it.y) }
-            stableFrames = 1
+            stableWindow.clear()
         } else {
             val snapDist = frameW * SNAP_DISTANCE_FRAC
-            var maxDrift = 0.0
             val next = ArrayList<org.opencv.core.Point>(4)
             for (i in 0..3) {
                 val dx = pts[i].x - current[i].x
                 val dy = pts[i].y - current[i].y
-                val dist = kotlin.math.hypot(dx, dy)
-                if (dist > maxDrift) maxDrift = dist
-                if (dist > snapDist) {
+                val jump = kotlin.math.hypot(dx, dy)
+                if (jump > maxJump) maxJump = jump
+                if (jump > snapDist) {
                     next.add(org.opencv.core.Point(pts[i].x, pts[i].y))
                 } else {
                     next.add(org.opencv.core.Point(
@@ -112,12 +114,23 @@ class ScanPresenter constructor(
                     ))
                 }
             }
+            // Sabitlik: YUMUŞATILMIŞ köşelerin bir önceki yumuşatılmış
+            // köşelere göre kayması. Ham tespit üzerinde ölçülürse EMA
+            // yakınsadıkça bile drift büyük kalır ve sayaç hiç dolmaz.
+            var smoothedDrift = 0.0
+            for (i in 0..3) {
+                val d = kotlin.math.hypot(next[i].x - current[i].x, next[i].y - current[i].y)
+                if (d > smoothedDrift) smoothedDrift = d
+            }
             smoothedCorners = next
-            stableFrames = if (maxDrift < frameW * STABLE_DRIFT_FRAC) stableFrames + 1 else 0
+            stableWindow.addLast(smoothedDrift < frameW * STABLE_DRIFT_FRAC)
+            if (stableWindow.size > STABLE_FRAMES_REQUIRED) stableWindow.removeFirst()
         }
 
-        if (stableFrames >= STABLE_FRAMES_REQUIRED && shutted) {
-            stableFrames = 0
+        val stableCount = stableWindow.count { it }
+        if (maxJump > frameW * SNAP_DISTANCE_FRAC) stableWindow.clear()
+        if (stableWindow.size >= STABLE_FRAMES_REQUIRED && stableCount >= MIN_STABLE_IN_WINDOW && shutted) {
+            stableWindow.clear()
             Log.i(TAG, "Otomatik çekim: kart sabitlendi")
             shut()
         }
