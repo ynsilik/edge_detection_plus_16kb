@@ -9,7 +9,7 @@ import kotlin.math.*
 
 const val TAG: String = "PaperProcessor"
 
-private const val WORK_WIDTH = 600.0
+private const val WORK_WIDTH = 450.0
 
 /**
  * Kamera karesinden kart/dokuman dikdortgenini bulur.
@@ -198,28 +198,31 @@ private fun cornersFromQuadrants(contour: MatOfPoint): List<Point>? {
 private fun distance(a: Point, b: Point): Double = sqrt((a.x - b.x).pow(2.0) + (a.y - b.y).pow(2.0))
 
 private fun clearBorder(mat: Mat, band: Int) {
+    // Piksel piksel put() yavas; submatsetTo ile 4 islemde temizle.
     val w = mat.cols(); val h = mat.rows()
-    for (y in 0 until h) {
-        if (y >= band && y < h - band) {
-            for (x in 0 until band) mat.put(y, x, 0.0)
-            for (x in (w - band) until w) mat.put(y, x, 0.0)
-        } else {
-            for (x in 0 until w) mat.put(y, x, 0.0)
-        }
-    }
+    val b = band.coerceAtMost(minOf(w, h) / 2)
+    if (b <= 0) return
+    mat.rowRange(0, b).setTo(Scalar(0.0))
+    mat.rowRange(h - b, h).setTo(Scalar(0.0))
+    mat.colRange(0, b).setTo(Scalar(0.0))
+    mat.colRange(w - b, w).setTo(Scalar(0.0))
 }
 
 private fun medianOf(mat: Mat): Double {
-    // blurred Mat CV_8UC1 oldugu icin DoubleArray ile okunamaz (exception).
-    val values = ByteArray(mat.rows() * mat.cols())
-    var i = 0
+    // Histogram based median: 200K elemani sort etmek yerine O(n) sayim.
+    val hist = IntArray(256)
     for (y in 0 until mat.rows()) {
         val row = ByteArray(mat.cols())
         mat.get(y, 0, row)
-        for (x in row.indices) { values[i++] = row[x] }
+        for (pixel in row) hist[pixel.toInt() and 0xFF]++
     }
-    val sorted = values.map { it.toInt() and 0xFF }.sorted()
-    return sorted[sorted.size / 2].toDouble()
+    val half = (mat.rows() * mat.cols()) / 2
+    var acc = 0
+    for (i in 0 until 256) {
+        acc += hist[i]
+        if (acc >= half) return i.toDouble()
+    }
+    return 0.0
 }
 
 fun cropPicture(picture: Mat, pts: List<Point>): Mat {

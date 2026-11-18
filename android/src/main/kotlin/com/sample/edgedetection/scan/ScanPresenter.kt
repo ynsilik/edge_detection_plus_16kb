@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
 import android.graphics.Point
 import android.graphics.Rect
 import android.graphics.YuvImage
@@ -384,28 +385,34 @@ class ScanPresenter constructor(
                 .doOnError {}
                 .subscribe({
                     val parameters = p1?.parameters
-                    val width = parameters?.previewSize?.width
-                    val height = parameters?.previewSize?.height
-                    val yuv = YuvImage(
-                        p0, parameters?.previewFormat ?: 0, width ?: 1080, height
-                            ?: 1920, null
-                    )
-                    val out = ByteArrayOutputStream()
-                    yuv.compressToJpeg(Rect(0, 0, width ?: 1080, height ?: 1920), 100, out)
-                    val bytes = out.toByteArray()
-                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    val width = parameters?.previewSize?.width ?: 1080
+                    val height = parameters?.previewSize?.height ?: 1920
                     val img = Mat()
-                    Utils.bitmapToMat(bitmap, img)
-                    bitmap.recycle()
-                    Core.rotate(img, img, Core.ROTATE_90_CLOCKWISE)
-                    try {
-                        out.close()
-                    } catch (e: IOException) {
-                        e.printStackTrace()
+                    // HIZLI YOL: YUV -> JPEG -> Bitmap -> Mat zincirini atla.
+                    // NV21 (Android varsayilan) dogrudan OpenCV'ye gecirilir.
+                    val fmt = parameters?.previewFormat
+                    if (p0 != null && fmt == ImageFormat.NV21 && p0.size == width * height * 3 / 2) {
+                        val yuvMat = Mat(height + height / 2, width, CvType.CV_8UC1)
+                        yuvMat.put(0, 0, p0)
+                        Imgproc.cvtColor(yuvMat, img, Imgproc.COLOR_YUV2BGR_NV21)
+                        yuvMat.release()
+                    } else {
+                        // Yedek yol: eski JPEG donusumu (format beklenmedikse).
+                        val yuv = YuvImage(p0, fmt ?: 0, width, height, null)
+                        val out = ByteArrayOutputStream()
+                        yuv.compressToJpeg(Rect(0, 0, width, height), 100, out)
+                        val bitmap = BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+                        if (bitmap != null) {
+                            Utils.bitmapToMat(bitmap, img)
+                            bitmap.recycle()
+                        }
+                        try { out.close() } catch (e: IOException) { e.printStackTrace() }
                     }
+                    Core.rotate(img, img, Core.ROTATE_90_CLOCKWISE)
 
                     Observable.create<Corners> {
                         val corner = processPicture(img)
+                        img.release()
                         busy = false
                         if (null != corner && corner.corners.size == 4) {
                             it.onNext(corner)
