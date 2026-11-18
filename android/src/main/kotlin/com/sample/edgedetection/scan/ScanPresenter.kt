@@ -68,12 +68,12 @@ class ScanPresenter constructor(
     private var missedFrames = 0
 
     companion object {
-        private const val SMOOTHING_ALPHA = 0.45         // EMA katsayısı (literatür 0.35-0.45)
-        private const val SNAP_DISTANCE_FRAC = 0.12      // kare genişliğinin %12'si -> ani zıplama
-        private const val STABLE_DRIFT_FRAC = 0.015      // %1.5 -> sabit kabul
-        private const val STABLE_FRAMES_REQUIRED = 4     // 4 karelik pencerede 3'ü sabit
-        private const val MIN_STABLE_IN_WINDOW = 3
-        private const val MAX_MISSES = 3                 // 3 kare tespit yoksa çizgiyi kaldır
+        private const val SMOOTHING_ALPHA = 0.35         // EMA katsayısı (daha fazla yumuşatma)
+        private const val SNAP_DISTANCE_FRAC = 0.22      // %22 -> ani zıplama (titreşim toleransı)
+        private const val STABLE_DRIFT_FRAC = 0.035      // %3.5 -> sabit kabul
+        private const val STABLE_FRAMES_REQUIRED = 3     // 3 karelik pencerede 2'si sabit
+        private const val MIN_STABLE_IN_WINDOW = 2
+        private const val MAX_MISSES = 4                 // 4 kare tespit yoksa çizgiyi kaldır
     }
 
     private val stableWindow = ArrayDeque<Boolean>()
@@ -94,6 +94,7 @@ class ScanPresenter constructor(
         val frameW = corners.size.width.toDouble().coerceAtLeast(1.0)
         val current = smoothedCorners
         var maxJump = 0.0
+        var smoothedDrift = 0.0
         if (current == null || current.size != 4) {
             smoothedCorners = pts.map { org.opencv.core.Point(it.x, it.y) }
             stableWindow.clear()
@@ -117,7 +118,6 @@ class ScanPresenter constructor(
             // Sabitlik: YUMUŞATILMIŞ köşelerin bir önceki yumuşatılmış
             // köşelere göre kayması. Ham tespit üzerinde ölçülürse EMA
             // yakınsadıkça bile drift büyük kalır ve sayaç hiç dolmaz.
-            var smoothedDrift = 0.0
             for (i in 0..3) {
                 val d = kotlin.math.hypot(next[i].x - current[i].x, next[i].y - current[i].y)
                 if (d > smoothedDrift) smoothedDrift = d
@@ -128,6 +128,7 @@ class ScanPresenter constructor(
         }
 
         val stableCount = stableWindow.count { it }
+        Log.d(TAG, "stabilize drift=${smoothedDrift.toInt()} esik=${(frameW * STABLE_DRIFT_FRAC).toInt()} jump=${maxJump.toInt()} pencere=${stableWindow.size}/${stableCount} shut=$shutted")
         if (maxJump > frameW * SNAP_DISTANCE_FRAC) stableWindow.clear()
         if (stableWindow.size >= STABLE_FRAMES_REQUIRED && stableCount >= MIN_STABLE_IN_WINDOW && shutted) {
             stableWindow.clear()
