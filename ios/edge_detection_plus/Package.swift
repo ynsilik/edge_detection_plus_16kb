@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "edge_detection_plus",
+  defaultLocalization: "en",
   platforms: [
     .iOS(.v13)
   ],
