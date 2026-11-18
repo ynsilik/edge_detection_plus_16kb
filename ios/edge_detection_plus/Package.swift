@@ -7,20 +7,24 @@ let package = Package(
     .iOS(.v13)
   ],
   products: [
-    .library(name: "edge_detection_plus", targets: ["edge_detection_plus"])
+    // Flutter, SPM urun adini eklenti adinin tireli haliyle bekler.
+    .library(name: "edge-detection-plus", targets: ["edge_detection_plus"])
   ],
   dependencies: [
-    .package(name: "FlutterFramework", path: "../FlutterFramework"),
-    .package(name: "WeScan", path: "../WeScan-3.0.0")
+    .package(name: "FlutterFramework", path: "../FlutterFramework")
   ],
   targets: [
+    // WeScan kaynaklari paketin icine kopyalandi; dis path bagimliligi yok.
+    .target(
+      name: "WeScan",
+      resources: [.process("Resources")]
+    ),
     .target(
       name: "edge_detection_plus",
       dependencies: [
-        .product(name: "FlutterFramework", package: "FlutterFramework"),
-        .product(name: "WeScan", package: "WeScan")
-      ],
-      path: "../Classes"
+        "WeScan",
+        .product(name: "FlutterFramework", package: "FlutterFramework")
+      ]
     )
   ]
 )
