@@ -51,7 +51,7 @@ fun processPicture(previewFrame: Mat): Corners? {
             return null
         }
 
-        Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0, Core.BORDER_REFLECT_101)
+        Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0, 0.0, Core.BORDER_REFLECT_101)
 
         val median = medianOf(blurred)
         val lower = max(30.0, min(200.0, 0.66 * median))
@@ -61,7 +61,7 @@ fun processPicture(previewFrame: Mat): Corners? {
         // Morfolojiyi 0-padding ile yap: sinirda ring olusumunu onler.
         val k = 5
         val border = k / 2 + 2
-        Imgproc.copyMakeBorder(edges, padded, border, border, border, border, Core.BORDER_CONSTANT, Scalar(0.0))
+        Core.copyMakeBorder(edges, padded, border, border, border, border, Core.BORDER_CONSTANT, Scalar(0.0))
         val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(k.toDouble(), k.toDouble()))
         Imgproc.morphologyEx(padded, closed, Imgproc.MORPH_CLOSE, kernel)
         kernel.release()
@@ -107,10 +107,13 @@ fun processPicture(previewFrame: Mat): Corners? {
 
             val hull = MatOfInt()
             Imgproc.convexHull(contour, hull)
+            val approxIn = MatOfPoint2f(*contour.toArray())
+            val approxOut = MatOfPoint2f()
+            Imgproc.approxPolyDP(approxIn, approxOut, 0.02 * Imgproc.arcLength(approxIn, true), true)
             val hullPoints = MatOfPoint()
-            Imgproc.approxPolyDP(contour, hullPoints, 0.02 * Imgproc.arcLength(MatOfPoint2f(*contour.toArray()), true), true)
+            approxOut.convertTo(hullPoints, CvType.CV_32S)
             val hullArea = Imgproc.contourArea(hullPoints)
-            hull.release(); hullPoints.release()
+            hull.release(); approxIn.release(); approxOut.release(); hullPoints.release()
             val solidity = if (hullArea > 0) area / hullArea else 0.0
             if (solidity < 0.85) continue
 
