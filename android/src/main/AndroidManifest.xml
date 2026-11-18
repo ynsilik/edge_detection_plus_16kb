@@ -1,27 +1,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-feature android:name="android.hardware.camera.any" android:required="true" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
-<uses-permission
-        android:name="android.permission.FLASHLIGHT"
-        android:permissionGroup="android.permission-group.HARDWARE_CONTROLS"
-        android:protectionLevel="normal"
-        android:maxSdkVersion="30"/>
-
-    <application
-        android:allowBackup="false"
-        android:requestLegacyExternalStorage="true"
-        android:supportsRtl="true"
-        android:theme="@style/AppTheme">
+    <application>
         <activity
             android:name=".scan.ScanActivity"
-            android:launchMode="singleTask"
-            android:screenOrientation="portrait" />
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/AppTheme" />
         <activity
             android:name=".crop.CropActivity"
-            android:launchMode="singleTask"
-            android:screenOrientation="portrait" />
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:theme="@style/AppTheme" />
     </application>
 
 </manifest>

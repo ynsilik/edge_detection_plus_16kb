@@ -1,49 +1,83 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:background="@android:color/black">
 
-    <SurfaceView
-        android:id="@+id/surface"
+    <!-- Onizleme ve cizim katmani ayni boyutta olmali: koordinat donusumu buna dayanir. -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/preview"
         android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+        android:layout_height="match_parent"
+        app:scaleType="fillCenter" />
 
     <com.sample.edgedetection.view.PaperRectangle
         android:id="@+id/paper_rect"
         android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <View
+        android:id="@+id/capture_flash"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/colorTransparent" />
+        android:alpha="0"
+        android:background="@android:color/white" />
+
+    <TextView
+        android:id="@+id/auto_toggle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="136dp"
+        android:background="@drawable/pill_background"
+        android:paddingStart="14dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="6dp"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+    <ProgressBar
+        android:id="@+id/busy"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:visibility="gone" />
 
     <RelativeLayout
+        android:id="@+id/bottom_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
+        android:layout_gravity="bottom"
         android:background="@color/colorPrimary"
         android:paddingLeft="15dp"
-        android:paddingTop="30dp"
+        android:paddingTop="24dp"
         android:paddingRight="15dp"
-        android:paddingBottom="30dp">
+        android:paddingBottom="24dp">
 
         <ImageView
             android:id="@+id/flash"
             android:layout_width="50dp"
             android:layout_height="50dp"
-            android:layout_alignParentRight="false"
+            android:layout_alignParentStart="true"
             android:layout_centerVertical="true"
             android:background="@drawable/round_button"
+            android:contentDescription="Flash"
             android:padding="12dp"
+            android:visibility="invisible"
             app:srcCompat="@drawable/ic_baseline_flash_on_24"
             app:tint="@android:color/white" />
 
         <ImageView
             android:id="@+id/shut"
-            android:layout_width="65dp"
-            android:layout_height="65dp"
+            android:layout_width="68dp"
+            android:layout_height="68dp"
             android:layout_centerInParent="true"
             android:background="@drawable/shut_button"
-            app:tint="@android:color/white" />
+            android:contentDescription="Capture" />
 
         <ImageView
             android:id="@+id/gallery"
@@ -52,10 +86,9 @@
             android:layout_alignParentEnd="true"
             android:layout_centerVertical="true"
             android:background="@drawable/round_button"
+            android:contentDescription="Gallery"
             android:padding="12dp"
             app:srcCompat="@drawable/ic_menu_gallery"
             app:tint="@android:color/white" />
-
     </RelativeLayout>
-
-</RelativeLayout>
+</FrameLayout>

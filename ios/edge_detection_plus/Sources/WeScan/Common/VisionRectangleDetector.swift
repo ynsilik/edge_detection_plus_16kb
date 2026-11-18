@@ -22,41 +22,68 @@ enum VisionRectangleDetector {
         width: CGFloat,
         height: CGFloat,
         preferredCenter: CGPoint = CGPoint(x: 0.5, y: 0.5),
+        throttleSegmentation: Bool = false,
         completion: @escaping ((Quadrilateral?) -> Void)
     ) {
-        let rectangleDetectionRequest: VNDetectRectanglesRequest = {
-            let rectDetectRequest = VNDetectRectanglesRequest(completionHandler: { request, error in
-                guard error == nil, let results = request.results as? [VNRectangleObservation], !results.isEmpty else {
-                    completion(nil)
-                    return
-                }
+        let transform = CGAffineTransform.identity.scaledBy(x: width, y: height)
 
-                let quads: [Quadrilateral] = results.map(Quadrilateral.init)
-
-                guard let bestQuad = quads.best(preferredCenter: preferredCenter) else {
-                    completion(nil)
-                    return
-                }
-
-                let transform = CGAffineTransform.identity
-                    .scaledBy(x: width, y: height)
-
-                completion(bestQuad.applying(transform))
-            })
-
-            rectDetectRequest.minimumConfidence = 0.6
-            rectDetectRequest.maximumObservations = 15
-            rectDetectRequest.minimumAspectRatio = 0.2
-
-            return rectDetectRequest
-        }()
+        // 1) Klasik dikdortgen tespiti (hizli, keskin kenarlarda cok isabetli).
+        let rectDetectRequest = VNDetectRectanglesRequest()
+        rectDetectRequest.minimumConfidence = 0.6
+        rectDetectRequest.maximumObservations = 15
+        rectDetectRequest.minimumAspectRatio = 0.2
 
         do {
-            try request.perform([rectangleDetectionRequest])
+            try request.perform([rectDetectRequest])
         } catch {
             completion(nil)
             return
         }
+
+        if let results = rectDetectRequest.results, !results.isEmpty,
+           let bestQuad = results.map(Quadrilateral.init).best(preferredCenter: preferredCenter) {
+            completion(bestQuad.applying(transform))
+            return
+        }
+
+        // 2) Yedek: iOS 15+ sinir agi tabanli belge segmentasyonu. Dusuk kontrastli
+        //    (beyaz kart / acik masa), yuvarlak koseli ya da kismen kapanmis kartlari
+        //    klasik dedektorun kacirdigi durumlarda bulur. Canli akista her karede
+        //    calistirmamak icin seyreltilir.
+        if #available(iOS 15.0, *), !throttleSegmentation || shouldRunSegmentation() {
+            let segmentation = VNDetectDocumentSegmentationRequest()
+            if (try? request.perform([segmentation])) != nil,
+               let results = segmentation.results?.filter({ $0.confidence >= 0.8 }),
+               !results.isEmpty,
+               let bestQuad = results.map(Quadrilateral.init).best(preferredCenter: preferredCenter),
+               isPlausible(bestQuad) {
+                completion(bestQuad.applying(transform))
+                return
+            }
+        }
+
+        completion(nil)
+    }
+
+    private static var segmentationTick = 0
+    private static let segmentationLock = NSLock()
+
+    /// Klasik tespitin bos dondugu her 2 karede bir segmentasyon dener.
+    private static func shouldRunSegmentation() -> Bool {
+        segmentationLock.lock()
+        defer { segmentationLock.unlock() }
+        segmentationTick &+= 1
+        return segmentationTick % 2 == 0
+    }
+
+    /// Segmentasyon cok kucuk / cok ince sonuclari elemek icin basit akil kontrolu
+    /// (normalize koordinatlarda).
+    private static func isPlausible(_ quad: Quadrilateral) -> Bool {
+        let w = Double(hypot(quad.topRight.x - quad.topLeft.x, quad.topRight.y - quad.topLeft.y))
+        let h = Double(hypot(quad.bottomLeft.x - quad.topLeft.x, quad.bottomLeft.y - quad.topLeft.y))
+        guard w > 0.08, h > 0.08 else { return false }
+        let aspect = Swift.max(w, h) / Swift.max(Swift.min(w, h), 0.001)
+        return aspect < 4.0
 
     }
 
@@ -72,6 +99,7 @@ enum VisionRectangleDetector {
             width: CGFloat(CVPixelBufferGetWidth(pixelBuffer)),
             height: CGFloat(CVPixelBufferGetHeight(pixelBuffer)),
             preferredCenter: preferredCenter,
+            throttleSegmentation: true,
             completion: completion)
     }
 
