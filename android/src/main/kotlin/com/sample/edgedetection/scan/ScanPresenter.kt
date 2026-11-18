@@ -33,7 +33,6 @@ import org.opencv.core.Core
 import org.opencv.core.Core.ROTATE_90_CLOCKWISE
 import org.opencv.core.CvType
 import org.opencv.core.Mat
-import org.opencv.core.Point
 import org.opencv.core.Size
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
@@ -65,7 +64,7 @@ class ScanPresenter constructor(
 
     // iOS'teki RectangleFeaturesFunnel mantiginin Android karsiligi:
     // ayni dikdortgen pek ust uste tespit edilirse otomatik foto cek.
-    private var lastAutoScanCorners: List<Point>? = null
+    private var lastAutoScanCorners: List<org.opencv.core.Point>? = null
     private var autoScanPassCount = 0
 
     companion object {
@@ -78,7 +77,7 @@ class ScanPresenter constructor(
         lastAutoScanCorners = null
     }
 
-    private fun cornersMatch(a: List<Point>, b: List<Point>): Boolean {
+    private fun cornersMatch(a: List<org.opencv.core.Point>, b: List<org.opencv.core.Point>): Boolean {
         for (i in 0..3) {
             val dx = a[i].x - b[i].x
             val dy = a[i].y - b[i].y
