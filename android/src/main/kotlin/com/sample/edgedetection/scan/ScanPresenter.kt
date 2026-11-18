@@ -33,6 +33,7 @@ import org.opencv.core.Core
 import org.opencv.core.Core.ROTATE_90_CLOCKWISE
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.Point
 import org.opencv.core.Size
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
@@ -61,6 +62,51 @@ class ScanPresenter constructor(
 
     private var mLastClickTime = 0L
     private var shutted: Boolean = true
+
+    // iOS'teki RectangleFeaturesFunnel mantiginin Android karsiligi:
+    // ayni dikdortgen pek ust uste tespit edilirse otomatik foto cek.
+    private var lastAutoScanCorners: List<Point>? = null
+    private var autoScanPassCount = 0
+
+    companion object {
+        private const val AUTO_SCAN_THRESHOLD = 20
+        private const val AUTO_SCAN_MATCH_PX = 12.0
+    }
+
+    private fun resetAutoScan() {
+        autoScanPassCount = 0
+        lastAutoScanCorners = null
+    }
+
+    private fun cornersMatch(a: List<Point>, b: List<Point>): Boolean {
+        for (i in 0..3) {
+            val dx = a[i].x - b[i].x
+            val dy = a[i].y - b[i].y
+            if (dx * dx + dy * dy > AUTO_SCAN_MATCH_PX * AUTO_SCAN_MATCH_PX) return false
+        }
+        return true
+    }
+
+    private fun maybeAutoCapture(corners: Corners) {
+        if (!shutted) return
+        val pts = corners.corners.filterNotNull()
+        if (pts.size != 4) {
+            resetAutoScan()
+            return
+        }
+        val previous = lastAutoScanCorners
+        if (previous != null && cornersMatch(pts, previous)) {
+            autoScanPassCount++
+            if (autoScanPassCount >= AUTO_SCAN_THRESHOLD) {
+                resetAutoScan()
+                Log.i(TAG, "Otomatik cekim: sabit kart algilandı")
+                shut()
+            }
+        } else {
+            autoScanPassCount = 0
+        }
+        lastAutoScanCorners = pts
+    }
 
     init {
         mSurfaceHolder.addCallback(this)
@@ -339,6 +385,7 @@ class ScanPresenter constructor(
                     }.observeOn(AndroidSchedulers.mainThread())
                         .subscribe({
                             iView.getPaperRect().onCornersDetected(it)
+                            maybeAutoCapture(it)
 
                         }, {
                             iView.getPaperRect().onCornersNotDetected()
