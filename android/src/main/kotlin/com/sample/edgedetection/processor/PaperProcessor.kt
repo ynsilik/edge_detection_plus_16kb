@@ -14,13 +14,12 @@ private const val WORK_WIDTH = 600.0
 /**
  * Kamera karesinden kart/dokuman dikdortgenini bulur.
  *
- * Onceki denemede filtreler fazla sikildi (fill>=0.70, solidity>=0.85,
- * area<=0.85) ve gercek kartlar da reddedildi. Bu surumde kabul kriterleri
- * gevsek tutulup sadece acikca hatali adaylar (tam ekran ring'i, cok kucuk
- * leke) eleniyor. Kok noktalar:
- *  - NORM_MINMAX amplify eder; dusuk varyans kontrolu var ama esik cok dusuk.
- *  - GaussianBlur REFLECT_101, morfoloji 0-padding (sınır ring'i onleme).
- *  - jscanify ceyrek yontemi ile 4 kose (approxPolyDP titremesi yok).
+ * Onceki surumde koseler "centroid cevre bolgesi" yontemiyle bulunuyordu:
+ * kart egildiginde/cevrildiginde bu yontem yanlis koseleri seciyordu.
+ * Bu surumde once convexHull + approxPolyDP ile gercek 4 kose aranir,
+ * bulunamazsa minAreaRect (dondurulmus dikdortgen) ve en son olarak
+ * cevre bolgesi yontemi denenir. Koseler her zaman TL,TR,BR,BL sirasina
+ * getirilir.
  */
 fun processPicture(previewFrame: Mat): Corners? {
     if (previewFrame.empty()) return null
@@ -33,6 +32,7 @@ fun processPicture(previewFrame: Mat): Corners? {
     val edges = Mat()
     val padded = Mat()
     val closed = Mat()
+    val dilated = Mat()
 
     try {
         Imgproc.resize(previewFrame, working, Size(), scale, scale, Imgproc.INTER_AREA)
@@ -42,61 +42,90 @@ fun processPicture(previewFrame: Mat): Corners? {
         Core.meanStdDev(gray, mean, std)
         val stddev = std.toArray().firstOrNull() ?: 0.0
         mean.release(); std.release()
-        if (stddev < 1.0) {
-            Log.d(TAG, "Bos kare (stddev=$stddev)")
+        if (stddev < 2.0) {
+            Log.d(TAG, "Bos kare (stddev=${stddev.toInt()})")
             return null
         }
 
         Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0, 0.0, Core.BORDER_REFLECT_101)
 
         val median = medianOf(blurred)
-        val lower = max(20.0, min(180.0, 0.60 * median))
-        val upper = max(50.0, min(220.0, 1.40 * median))
+        val lower = (0.55 * median).coerceIn(12.0, 90.0)
+        val upper = (1.45 * median).coerceIn(50.0, 200.0)
         Imgproc.Canny(blurred, edges, lower, upper)
 
-        val k = 7
+        // Kenar cizgisi kopuk olsa bile tek kontur olmasi icin kapat + biraz buyut.
+        val k = 9
         val border = k / 2 + 2
         Core.copyMakeBorder(edges, padded, border, border, border, border, Core.BORDER_CONSTANT, Scalar(0.0))
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(k.toDouble(), k.toDouble()))
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(k.toDouble(), k.toDouble()))
         Imgproc.morphologyEx(padded, closed, Imgproc.MORPH_CLOSE, kernel)
+        Imgproc.dilate(closed, dilated, kernel)
         kernel.release()
-        val close = Mat(closed, org.opencv.core.Rect(border, border, edges.cols(), edges.rows()))
-
-        val w = close.cols(); val h = close.rows()
-        val band = 6
-        clearBorder(close, band)
+        val work = Mat(dilated, Rect(border, border, edges.cols(), edges.rows()))
+        val w = work.cols(); val h = work.rows()
+        clearBorder(work, 6)
 
         val contours = ArrayList<MatOfPoint>()
         val hierarchy = Mat()
-        Imgproc.findContours(close, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        Imgproc.findContours(work, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        Log.d(TAG, "kontur=${contours.size} stddev=${stddev.toInt()} canny=${lower.toInt()}/${upper.toInt()}")
 
         val imageArea = w.toDouble() * h.toDouble()
-        val ordered = contours.sortedByDescending { Imgproc.contourArea(it) }.take(10)
-        Log.d(TAG, "kontur=${contours.size} stddev=$stddev canny=$lower/$upper")
-
         var bestQuad: List<Point>? = null
         var bestScore = Double.NEGATIVE_INFINITY
 
-        for (contour in ordered) {
+        for (contour in contours.sortedByDescending { Imgproc.contourArea(it) }.take(12)) {
             val area = Imgproc.contourArea(contour)
-            if (area < imageArea * 0.03 || area > imageArea * 0.95) continue
+            if (area < imageArea * 0.04 || area > imageArea * 0.97) continue
 
-            val rect = Imgproc.boundingRect(contour)
-            if (rect.x <= band || rect.y <= band ||
-                rect.x + rect.width >= w - band ||
-                rect.y + rect.height >= h - band) continue
+            // once convex hull: metin/kenar birlesmesinden olusan girintileri temizler.
+            val hull = MatOfInt()
+            Imgproc.convexHull(contour, hull)
+            val hullPts = hull.toArray().map { contour.toArray()[it] }
+            hull.release()
 
-            val fill = area / (rect.width.toDouble() * rect.height.toDouble())
-            if (fill < 0.40) continue
+            var quad: List<Point>? = null
+            var method = "quadrant"
 
-            val quad = cornersFromQuadrants(contour) ?: continue
-            if (quad.any { it.x < 0 || it.y < 0 || it.x > w || it.y > h }) continue
+            if (hullPts.size >= 4) {
+                val hull2f = MatOfPoint2f(*hullPts.toTypedArray())
+                val peri = Imgproc.arcLength(hull2f, true)
+                val approx = MatOfPoint2f()
+                Imgproc.approxPolyDP(hull2f, approx, 0.022 * peri, true)
+                val approxPts = approx.toArray().toList()
+                hull2f.release(); approx.release()
+                if (approxPts.size == 4 && Imgproc.isContourConvex(MatOfPoint(*approxPts.toTypedArray()))) {
+                    quad = approxPts
+                    method = "polyDP"
+                }
+            }
+
+            if (quad == null) {
+                val rr = Imgproc.minAreaRect(MatOfPoint2f(*hullPts.toTypedArray()))
+                val box = arrayOfNulls<Point>(4)
+                rr.points(box)
+                val b = box.filterNotNull()
+                if (b.size == 4) { quad = b; method = "minAreaRect" }
+            }
+            if (quad == null) quad = cornersFromQuadrants(contour)
+            if (quad == null || quad.size != 4) continue
+
+            quad = orderPoints(quad)
+            if (quad.any { it.x < -8 || it.y < -8 || it.x > w + 8 || it.y > h + 8 }) continue
+
+            val qArea = polygonArea(quad)
+            if (qArea < imageArea * 0.04) continue
 
             val top = (distance(quad[0], quad[1]) + distance(quad[3], quad[2])) / 2.0
             val side = (distance(quad[0], quad[3]) + distance(quad[1], quad[2])) / 2.0
             if (top <= 0.0 || side <= 0.0) continue
             val aspect = max(top, side) / min(top, side)
-            if (aspect < 1.05 || aspect > 2.8) continue
+            if (aspect > 3.2) continue
+
+            val rect = Imgproc.boundingRect(contour)
+            val fill = qArea / max(1.0, rect.width.toDouble() * rect.height.toDouble())
+            if (fill < 0.45) continue
 
             val cx = quad.map { it.x }.average()
             val cy = quad.map { it.y }.average()
@@ -104,15 +133,14 @@ fun processPicture(previewFrame: Mat): Corners? {
             val dy = (cy - h / 2.0) / h
             val centerScore = 1.0 - min(1.0, sqrt(dx * dx + dy * dy) * 2.0)
             val aspectScore = 1.0 - min(1.0, abs(aspect - 1.586) / 1.0)
-            val score = (area / imageArea) * 50.0 + centerScore * 20.0 + aspectScore * 20.0 + fill * 10.0
-            Log.d(TAG, "aday area=${(area/imageArea*100).toInt()}% fill=${fill.toInt()} aspect=${aspect.toInt()} score=${score.toInt()}")
-
+            val score = (qArea / imageArea) * 55.0 + centerScore * 15.0 + aspectScore * 20.0 + fill * 10.0
+            Log.d(TAG, "aday $method area=${(area / imageArea * 100).toInt()}% q=${(qArea / imageArea * 100).toInt()}% aspect=$aspect fill=${fill.toInt()} score=${score.toInt()}")
             if (score > bestScore) { bestScore = score; bestQuad = quad }
         }
         hierarchy.release()
 
         if (bestQuad != null) {
-            Log.d(TAG, "SECIildi score=${bestScore.toInt()}")
+            Log.d(TAG, "SECILDI score=${bestScore.toInt()}")
             return Corners(bestQuad!!.map { Point(it.x / scale, it.y / scale) }, originalSize)
         }
         Log.d(TAG, "Kose bulunamadi")
@@ -121,8 +149,30 @@ fun processPicture(previewFrame: Mat): Corners? {
         Log.e(TAG, "Kose tespiti hatasi", e)
         return null
     } finally {
-        closed.release(); padded.release(); edges.release(); blurred.release(); gray.release(); working.release()
+        dilated.release(); closed.release(); padded.release(); edges.release(); blurred.release(); gray.release(); working.release()
     }
+}
+
+/** 4 noktayi sira ile TL, TR, BR, BL olarak duzenler. */
+private fun orderPoints(pts: List<Point>): List<Point> {
+    val a = pts.take(4)
+    val sum = a.map { it.x + it.y }
+    val diff = a.map { it.x - it.y }
+    return listOf(
+        a[sum.indexOf(sum.minOrNull()!!)],
+        a[diff.indexOf(diff.maxOrNull()!!)],
+        a[sum.indexOf(sum.maxOrNull()!!)],
+        a[diff.indexOf(diff.minOrNull()!!)]
+    )
+}
+
+private fun polygonArea(pts: List<Point>): Double {
+    var area = 0.0
+    for (i in pts.indices) {
+        val p1 = pts[i]; val p2 = pts[(i + 1) % pts.size]
+        area += p1.x * p2.y - p2.x * p1.y
+    }
+    return abs(area) / 2.0
 }
 
 private fun cornersFromQuadrants(contour: MatOfPoint): List<Point>? {
@@ -162,7 +212,6 @@ private fun clearBorder(mat: Mat, band: Int) {
 private fun medianOf(mat: Mat): Double {
     // blurred Mat CV_8UC1 oldugu icin DoubleArray ile okunamaz (exception).
     val values = ByteArray(mat.rows() * mat.cols())
-    // Mat satirlarini tek seferde okumak daha guvenli.
     var i = 0
     for (y in 0 until mat.rows()) {
         val row = ByteArray(mat.cols())
