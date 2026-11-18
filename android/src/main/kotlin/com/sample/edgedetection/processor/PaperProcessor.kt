@@ -160,10 +160,17 @@ private fun clearBorder(mat: Mat, band: Int) {
 }
 
 private fun medianOf(mat: Mat): Double {
-    val buf = DoubleArray(mat.rows() * mat.cols())
-    mat.get(0, 0, buf)
-    buf.sort()
-    return buf[buf.size / 2]
+    // blurred Mat CV_8UC1 oldugu icin DoubleArray ile okunamaz (exception).
+    val values = ByteArray(mat.rows() * mat.cols())
+    // Mat satirlarini tek seferde okumak daha guvenli.
+    var i = 0
+    for (y in 0 until mat.rows()) {
+        val row = ByteArray(mat.cols())
+        mat.get(y, 0, row)
+        for (x in row.indices) { values[i++] = row[x] }
+    }
+    val sorted = values.map { it.toInt() and 0xFF }.sorted()
+    return sorted[sorted.size / 2].toDouble()
 }
 
 fun cropPicture(picture: Mat, pts: List<Point>): Mat {
