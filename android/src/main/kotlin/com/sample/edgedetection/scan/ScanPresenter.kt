@@ -62,49 +62,66 @@ class ScanPresenter constructor(
     private var mLastClickTime = 0L
     private var shutted: Boolean = true
 
-    // iOS'teki RectangleFeaturesFunnel mantiginin Android karsiligi:
-    // ayni dikdortgen pek ust uste tespit edilirse otomatik foto cek.
-    private var lastAutoScanCorners: List<org.opencv.core.Point>? = null
-    private var autoScanPassCount = 0
+    // Kareler arası köşe titreşimini EMA ile yumuşat ve yalnızca gerçekten
+    // sabitlenen bir dikdörtgende otomatik foto çek.
+    private var smoothedCorners: List<org.opencv.core.Point>? = null
+    private var stableFrames = 0
+    private var missedFrames = 0
 
     companion object {
-        private const val AUTO_SCAN_THRESHOLD = 20
-        private const val AUTO_SCAN_MATCH_PX = 12.0
+        private const val SMOOTHING_ALPHA = 0.4          // EMA katsayısı
+        private const val SNAP_DISTANCE_FRAC = 0.12      // kare genişliğinin %12'si -> ani zıplama
+        private const val STABLE_DRIFT_FRAC = 0.02       // kare genişliğinin %2'si -> sabit kabul
+        private const val STABLE_FRAMES_REQUIRED = 8     // ~0.5 sn sabit kalınca çek
+        private const val MAX_MISSES = 3                 // 3 kare tespit yoksa çizgiyi kaldır
     }
 
-    private fun resetAutoScan() {
-        autoScanPassCount = 0
-        lastAutoScanCorners = null
-    }
-
-    private fun cornersMatch(a: List<org.opencv.core.Point>, b: List<org.opencv.core.Point>): Boolean {
-        for (i in 0..3) {
-            val dx = a[i].x - b[i].x
-            val dy = a[i].y - b[i].y
-            if (dx * dx + dy * dy > AUTO_SCAN_MATCH_PX * AUTO_SCAN_MATCH_PX) return false
-        }
-        return true
-    }
-
-    private fun maybeAutoCapture(corners: Corners) {
-        if (!shutted) return
+    /** Tespit edilen köşeleri yumuşatır, stabilite sayacını günceller. */
+    private fun stabilizeCorners(corners: Corners): Corners {
         val pts = corners.corners.filterNotNull()
         if (pts.size != 4) {
-            resetAutoScan()
-            return
-        }
-        val previous = lastAutoScanCorners
-        if (previous != null && cornersMatch(pts, previous)) {
-            autoScanPassCount++
-            if (autoScanPassCount >= AUTO_SCAN_THRESHOLD) {
-                resetAutoScan()
-                Log.i(TAG, "Otomatik cekim: sabit kart algilandı")
-                shut()
+            missedFrames++
+            if (missedFrames >= MAX_MISSES) {
+                smoothedCorners = null
+                stableFrames = 0
+                iView.getPaperRect().onCornersNotDetected()
             }
-        } else {
-            autoScanPassCount = 0
+            return corners
         }
-        lastAutoScanCorners = pts
+        missedFrames = 0
+        val frameW = corners.size.width.toDouble().coerceAtLeast(1.0)
+        val current = smoothedCorners
+        if (current == null || current.size != 4) {
+            smoothedCorners = pts.map { org.opencv.core.Point(it.x, it.y) }
+            stableFrames = 1
+        } else {
+            val snapDist = frameW * SNAP_DISTANCE_FRAC
+            var maxDrift = 0.0
+            val next = ArrayList<org.opencv.core.Point>(4)
+            for (i in 0..3) {
+                val dx = pts[i].x - current[i].x
+                val dy = pts[i].y - current[i].y
+                val dist = kotlin.math.hypot(dx, dy)
+                if (dist > maxDrift) maxDrift = dist
+                if (dist > snapDist) {
+                    next.add(org.opencv.core.Point(pts[i].x, pts[i].y))
+                } else {
+                    next.add(org.opencv.core.Point(
+                        current[i].x + SMOOTHING_ALPHA * dx,
+                        current[i].y + SMOOTHING_ALPHA * dy
+                    ))
+                }
+            }
+            smoothedCorners = next
+            stableFrames = if (maxDrift < frameW * STABLE_DRIFT_FRAC) stableFrames + 1 else 0
+        }
+
+        if (stableFrames >= STABLE_FRAMES_REQUIRED && shutted) {
+            stableFrames = 0
+            Log.i(TAG, "Otomatik çekim: kart sabitlendi")
+            shut()
+        }
+        return Corners(smoothedCorners!!, corners.size)
     }
 
     init {
@@ -383,8 +400,8 @@ class ScanPresenter constructor(
                         }
                     }.observeOn(AndroidSchedulers.mainThread())
                         .subscribe({
-                            iView.getPaperRect().onCornersDetected(it)
-                            maybeAutoCapture(it)
+                            val stable = stabilizeCorners(it)
+                            iView.getPaperRect().onCornersDetected(stable)
 
                         }, {
                             iView.getPaperRect().onCornersNotDetected()
